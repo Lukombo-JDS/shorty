@@ -6,14 +6,22 @@ struct ShortLink{
 impl ShortLink {
     fn new(key: String, url: String)->Result<Self,String>{
        
-        if !key.trim().trim_ascii().is_empty() {
-            Ok(ShortLink{ 
-                    url: url,
-                    key: key 
-            })
-        }else{
-            Err(String::from("Error: key empty"))
+        if key.trim().is_empty() {
+            return Err(String::from("Error: key empty"));
         }
+
+        if url.trim().is_empty() {
+            return Err(String::from("Error: url empty"));
+        }
+
+        if !url.starts_with("http://") && !url.starts_with("https://") {
+            return Err(String::from("Error: invalid url scheme"));
+        }
+
+        Ok(ShortLink{ 
+                url: url,
+                key: key 
+        })
     }
 
     fn get_url(&self)->&str {
@@ -65,6 +73,27 @@ mod tests {
 
         assert!(result.is_err())
     }
+
+    #[test]
+    fn rejects_blank_url(){
+        let result = ShortLink::new(
+            String::from("abc123"),
+            String::from("  ")
+        );
+
+        assert!(result.is_err())
+    }
+
+    #[test]
+    fn rejects_unsupported_url_sheme() {
+        let result = ShortLink::new(
+            String::from("abc123"), 
+            String::from("ftp://exemple.com")
+        );
+
+        assert!(result.is_err())
+    }
+    
 
     #[test]
     fn preserves_valid_key_and_url() {
