@@ -1,3 +1,5 @@
+use std::{collections::HashMap};
+
 use url::Url;
 
 /// Object saving user url and its key.
@@ -48,20 +50,78 @@ impl ShortLink {
     }
 }
 
+struct ShortStore{
+    links: HashMap<String, String>,
+}
+
+impl ShortStore{
+
+    ///ShortStore Constructor for a new instance
+    fn new()->ShortStore{
+        ShortStore { 
+            links: HashMap::new() 
+        }
+    }
+
+    fn insert(&mut self, link: ShortLink)->Result<(),String>{
+
+        if !self.links.contains_key(&link.key) {
+           match self.links.insert(link.key, link.url) {
+               Some(_) => Ok(()),
+               None => Ok(())
+           }
+        }else{
+            Err(String::from("Error: key already exists"))
+        }
+    }
+
+    fn search(&self)->Result<ShortLink,String>{
+        todo!()
+    }
+}
 
 fn main() {
 
-    let url = String::from("http://exemple.com");
-    let key = String::from("");
-
-    match ShortLink::new(key, url) {
-        Ok(shorty) => {
-            println!(" key: {}",shorty.get_key());
-            println!("url: {}", shorty.get_url())
-        },
-        Err(err) => eprintln!("{}",err)
-    }
     
+    
+    
+}
+
+///ShortStore's unit tests
+#[cfg(test)]
+mod tests_short_store {
+    use crate::ShortLink;
+    use super::ShortStore;
+
+    #[test]
+    fn store_key_url() {
+        let mut shorty_store = ShortStore::new();
+        let shorty = ShortLink::new(
+            String::from("abc123"),
+            String::from("https://youtube.com")).expect("error: can not create link");
+        
+        let inserted = shorty_store.insert(shorty);
+        assert!(inserted.is_ok())
+        
+    }
+
+    #[test]
+    fn rejects_same_key_insertion(){
+        let mut shorty_store = ShortStore::new();
+        let shorty_1 = ShortLink::new(
+            String::from("abc123"),
+            String::from("https://youtube.com")).expect("error: can not create link");
+
+        let _ = shorty_store.insert(shorty_1);
+
+        let shorty_2 = ShortLink::new(
+            String::from("abc123"),
+            String::from("https://youtube.com")).expect("error: can not create link");
+
+        let inserted = shorty_store.insert(shorty_2);
+        assert!(inserted.is_err())
+        
+    }
 }
 
 /// ShortLink's unit tests
