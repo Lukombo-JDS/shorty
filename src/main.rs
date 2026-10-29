@@ -1,3 +1,85 @@
-fn main() {
-    println!("Hello, world!");
+struct ShortLink{
+    url: String,
+    key: String
 }
+
+impl ShortLink {
+    fn new(key: String, url: String)->Result<Self,String>{
+       
+        if !key.trim().trim_ascii().is_empty() {
+            Ok(ShortLink{ 
+                    url: url,
+                    key: key 
+            })
+        }else{
+            Err(String::from("Error: key empty"))
+        }
+    }
+
+    fn get_url(&self)->&str {
+        &self.url
+    }
+
+    fn get_key(&self)->&str{
+        &self.key
+    }
+}
+
+
+fn main() {
+
+    let url = String::from("http://exemple.com");
+    let key = String::from("");
+
+    match ShortLink::new(key, url) {
+        Ok(shorty) => {
+            println!(" key: {}",shorty.get_key());
+            println!("url: {}", shorty.get_url())
+        },
+        Err(err) => eprintln!("{}",err)
+    }
+    
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::ShortLink;
+
+    #[test]
+    fn rejects_empty_key() {
+        let result = ShortLink::new(
+            String::from(""),
+            String::from("https://example.com"),
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_whitespace_only_key() {
+        let result = ShortLink::new(
+            String::from("  "),
+            String::from("http://exemple.com")
+        );
+
+        assert!(result.is_err())
+    }
+
+    #[test]
+    fn preserves_valid_key_and_url() {
+        
+        let result = ShortLink::new(
+            String::from("abc123"),
+            String::from("http://exemple.com")
+        );
+
+        let shorty = result.expect("une clef valide doit être acceptée");
+        
+        assert_eq!(shorty.get_key(),"abc123");
+        assert_eq!(shorty.get_url(), "http://exemple.com")
+    }
+
+}
+
+
