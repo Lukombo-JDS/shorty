@@ -1,5 +1,6 @@
 use std::{collections::HashMap};
 
+use rand::distr::{Alphanumeric, SampleString};
 use url::Url;
 
 /// Object saving user url and its key.
@@ -59,24 +60,50 @@ impl ShortStore{
     ///ShortStore Constructor for a new instance
     fn new()->ShortStore{
         ShortStore { 
-            links: HashMap::new() 
+            links: HashMap::new(),
         }
     }
 
     fn insert(&mut self, link: ShortLink)->Result<(),String>{
 
-        if !self.links.contains_key(&link.key) {
-           match self.links.insert(link.key, link.url) {
-               Some(_) => Ok(()),
-               None => Ok(())
-           }
-        }else{
-            Err(String::from("Error: key already exists"))
+        if self.links.contains_key(&link.key) {
+           return Err(String::from("Error: key already exists")) // url exist for the specific key
         }
+
+        self.links.insert(link.key, link.url);
+
+        Ok(())
     }
 
-    fn search(&self)->Result<ShortLink,String>{
-        todo!()
+    fn generate_key() -> String {
+        Alphanumeric.sample_string(&mut rand::rng(), 8)
+    }
+
+    fn shorten(&mut self, url: String)->Result<String,String>{
+
+        for _ in 0..10 {
+            
+            let key_generated = Self::generate_key();
+            
+            if !self.links.contains_key(&key_generated){
+                
+                let link = ShortLink::new(
+                    key_generated.clone(),
+                    url
+                )?;
+                
+                self.insert(link)?;
+                
+                return Ok(key_generated);
+            } 
+        }
+        Err(String::from("Error: no free key found"))
+    }
+
+
+
+    fn resolve(&self, key: &str)->Option<&str>{
+        self.links.get(key).map(String::as_str)
     }
 }
 
@@ -93,6 +120,50 @@ mod tests_short_store {
     use crate::ShortLink;
     use super::ShortStore;
 
+
+    /*
+     * Shorten Tests
+     */
+
+    #[test]
+    fn shorten_stores_destination(){
+
+        let mut short_store = ShortStore::new();
+
+        let result = short_store.shorten("https://exemple.com/article".to_string());
+
+        let key = result.expect("Error: can not shorten this url");
+
+        let url_resolved = short_store.resolve(&key).expect("Error: url not found");
+
+        assert_eq!(url_resolved,"https://exemple.com/article")
+    }
+
+    #[test]
+    fn shorten_rejects_invalid_url(){
+
+        let mut short_store = ShortStore::new();
+
+        assert!(short_store.shorten("https://".to_string()).is_err());
+        assert!(short_store.links.is_empty())
+    }
+
+    /*
+     * Generate Key Tests
+     */
+
+    #[test]
+    fn verify_generate_key_is_alphanumeric(){
+        let key = ShortStore::generate_key();
+        
+        assert_eq!(key.len(), 8);
+        assert!(key.chars().all(|character| character.is_ascii_alphanumeric()));
+    }
+    
+    /*
+     * Insert Tests
+     */
+
     #[test]
     fn store_key_url() {
         let mut shorty_store = ShortStore::new();
@@ -101,7 +172,12 @@ mod tests_short_store {
             String::from("https://youtube.com")).expect("error: can not create link");
         
         let inserted = shorty_store.insert(shorty);
-        assert!(inserted.is_ok())
+        assert!(inserted.is_ok());
+
+        assert_eq!(
+            shorty_store.links.get("abc123").map(String::as_str),
+            Some("https://youtube.com/")
+        )
         
     }
 
@@ -110,16 +186,65 @@ mod tests_short_store {
         let mut shorty_store = ShortStore::new();
         let shorty_1 = ShortLink::new(
             String::from("abc123"),
-            String::from("https://youtube.com")).expect("error: can not create link");
+            String::from("https://discord.com")).expect("error: can not create link");
 
-        let _ = shorty_store.insert(shorty_1);
+        let _ = shorty_store
+            .insert(shorty_1)
+            .expect("the first insert must succeed");
 
         let shorty_2 = ShortLink::new(
             String::from("abc123"),
             String::from("https://youtube.com")).expect("error: can not create link");
 
         let inserted = shorty_store.insert(shorty_2);
-        assert!(inserted.is_err())
+        assert!(inserted.is_err());
+
+        assert_eq!(
+            shorty_store.links.get("abc123")
+                .map(String::as_str),
+            Some("https://discord.com/")
+        )
+        
+    }
+
+    #[test]
+    fn return_the_right_url(){
+
+        let shorty_1 = ShortLink::new(
+            String::from("abc123"),
+            String::from("https://youtube.com"));
+
+        let shorty_2 = ShortLink::new(
+            String::from("def456"), 
+            String::from("http://localhost"));
+
+        let shorty_3 = ShortLink::new(
+            String::from("ghi789"),
+            String::from("https://twitch.com"));
+
+        let mut shorty_store = ShortStore::new();
+
+        shorty_store.insert(shorty_1.expect("Error: invalid link"))
+        .expect("invalid insert");
+
+        shorty_store.insert(shorty_2.expect("Error: invalid link"))
+            .expect("invalid insert");
+
+        shorty_store.insert(shorty_3.expect("Error: invalid link"))
+            .expect("invalid insert");
+
+        assert_eq!(
+            shorty_store.resolve("ghi789"),
+            Some("https://twitch.com/")
+        );
+
+        assert_eq!(
+            shorty_store.resolve("1234"),
+            None
+        )
+        
+        
+
         
     }
 }
