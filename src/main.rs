@@ -59,7 +59,7 @@ impl ShortStore{
 
     ///ShortStore Constructor for a new instance
     fn new()->ShortStore{
-        ShortStore { 
+        ShortStore {
             links: HashMap::new(),
         }
     }
@@ -83,7 +83,7 @@ impl ShortStore{
         self.shorten_with_generator(url, Self::generate_key)
     }
 
-    fn shorten_with_generator(&mut self, url: String, generate: fn() -> String)->Result<String,String>{
+    fn shorten_with_generator(&mut self, url: String, mut generate: impl FnMut() -> String)->Result<String,String>{
 
         for _ in 0..10 {
             
@@ -99,7 +99,7 @@ impl ShortStore{
                 self.insert(link)?;
                 
                 return Ok(key_generated);
-            } 
+            }
         }
         Err(String::from("Error: no free key found"))
     }
@@ -112,8 +112,6 @@ impl ShortStore{
 }
 
 fn main() {
-
-    
     
     
 }
@@ -124,14 +122,76 @@ mod tests_short_store {
     use crate::ShortLink;
     use super::ShortStore;
 
-
-
     /*
      * Shorten Tests
      */
 
-    fn always_taken() -> String {
-        String::from("Taken001")
+    fn always_taken()->String{
+        "Taken001".to_string()
+    }
+
+    #[test]
+    fn rejects_after_10_attempts(){
+
+        let mut short_store = ShortStore::new();
+
+        let shorty = ShortLink::new(
+            "Taken001".to_string(),
+            "https://twitch.com".to_string()).expect("Error: can not create new link");
+
+        short_store.insert(shorty).expect("Error: can not insert a new link");
+
+        let mut calls = 0;
+        let generate = || {
+            calls+=1;
+            always_taken()
+        };
+
+        let result = short_store.shorten_with_generator("https://go.com".to_string(), generate);
+
+        assert!(result.is_err());
+        assert_eq!(calls,10);
+        assert_eq!(short_store.resolve("Taken001"), Some("https://twitch.com/"));
+        assert_eq!(short_store.links.len(),1)
+        
+    }
+
+    #[test]
+    fn retries_after_collision () {
+
+        let mut short_store = ShortStore::new();
+
+        let shorty = ShortLink::new(
+            "Taken001".to_string(),
+            "https://twitch.com".to_string())
+            .expect("Error: can not create new link");
+
+        let _ = short_store.insert(shorty).expect("Error: can not insert link");
+
+        let mut calls = 0;
+
+        let generate = || {
+            calls+=1;
+            if calls == 1{
+                "Taken001".to_string()
+            }else{
+                "Free0001".to_string()
+            }
+        };
+
+        let result = short_store.shorten_with_generator(
+            "https://exemple.com".to_string(), generate)
+        .expect("Error: new try must found a free key");
+
+         assert_eq!(result,"Free0001");
+         assert_eq!(calls,2);
+         assert_eq!(short_store.links.len(),2);
+         assert_eq!(short_store.resolve("Free0001"),Some("https://exemple.com/"));
+         assert_eq!(
+             short_store.resolve("Taken001"),
+             Some("https://twitch.com/")
+         )
+        
     }
     
     #[test]
