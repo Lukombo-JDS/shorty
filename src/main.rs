@@ -79,11 +79,15 @@ impl ShortStore{
         Alphanumeric.sample_string(&mut rand::rng(), 8)
     }
 
-    fn shorten(&mut self, url: String)->Result<String,String>{
+    fn shorten(&mut self, url: String) -> Result<String, String> {
+        self.shorten_with_generator(url, Self::generate_key)
+    }
+
+    fn shorten_with_generator(&mut self, url: String, generate: fn() -> String)->Result<String,String>{
 
         for _ in 0..10 {
             
-            let key_generated = Self::generate_key();
+            let key_generated = generate();
             
             if !self.links.contains_key(&key_generated){
                 
@@ -121,9 +125,36 @@ mod tests_short_store {
     use super::ShortStore;
 
 
+
     /*
      * Shorten Tests
      */
+
+    fn always_taken() -> String {
+        String::from("Taken001")
+    }
+    
+    #[test]
+    fn rejects_same_generate_key(){
+        let mut short_store = ShortStore::new();
+
+        let _ = short_store.shorten_with_generator(
+            "https://exemple.com".to_string(), 
+            always_taken
+        ).expect("Error: can not generate a new key");
+
+        let res = short_store.shorten_with_generator(
+            "https://exemple_2.com".to_string(), 
+            always_taken);
+
+       assert!(res.is_err());
+       assert_eq!(
+           short_store.resolve("Taken001"),
+           Some("https://exemple.com/")
+       );
+       assert_eq!(short_store.links.len(),1)
+       
+    }
 
     #[test]
     fn shorten_stores_destination(){
