@@ -1,9 +1,15 @@
-use std::{collections::HashMap};
+#![allow(dead_code, unused_variables, unused_imports)]
 
+use std::{collections::HashMap, fs::{self, File}, io::{BufRead, BufReader, Read}, path::PathBuf};
 use rand::distr::{Alphanumeric, SampleString};
 use url::Url;
+use std::fmt::Display;
+use serde::{Deserialize, Serialize, Serializer};
+
+const NB_KEY_CHARACTERS: usize = 12;
 
 /// Object saving user url and its key.
+#[derive(Serialize,Deserialize)]
 struct ShortLink{
     url: String,
     key: String
@@ -19,6 +25,10 @@ impl ShortLink {
         if key.trim().is_empty() {
             return Err(String::from("Error: key empty"));
         }
+
+        if key.contains("http://") || key.contains("https://"){
+            return Err(String::from("Error: key already have url scheme"))
+        }
         
         match Url::parse(&url) {
             Ok(url_parsed) =>{
@@ -30,11 +40,24 @@ impl ShortLink {
                 if url_parsed.host().is_none() {
                    return Err(String::from("Error: missing host"));
                 }
+                if url_parsed.scheme() == "http"{
+                    let mut url_key = "http://".to_string();
+                    url_key.push_str(&key);
+                    return Ok(ShortLink{
+                            url: url_parsed.to_string(),
+                            key: url_key
+                    })
+                }else if url_parsed.scheme() == "https" {
+                    let mut url_key = "https://".to_string();
+                    url_key.push_str(&key);
+                    return Ok(ShortLink{
+                            url: url_parsed.to_string(),
+                            key: url_key
+                    })
+                }else{
+                    Err(String::from("Error: invalid url scheme"))
+                }
                 
-                Ok(ShortLink{
-                        url: url_parsed.to_string(),
-                        key: key 
-                })
             },
             Err(err) => Err(err.to_string())
         }
@@ -51,9 +74,40 @@ impl ShortLink {
     }
 }
 
+#[derive(Serialize,Deserialize,Debug)]
 struct ShortStore{
-    links: HashMap<String, String>,
+    links: HashMap<String, String>
 }
+
+// #[derive(Serialize)]
+// struct InMemory{
+//     store: ShortStore,
+//     link: ShortLink
+//     
+// }
+// 
+// impl InMemory{
+//     fn new(store: ShortStore, link: ShortLink)->InMemory{
+//         InMemory { 
+//             store: store,
+//             link: link
+//         }
+//     }
+// 
+//     fn save(&self, path: &str)->Result<(),String>{
+//         //serialize into json
+// 
+// 
+//        match serde_json::to_string_pretty(self) {
+//            Ok(key_url_json) => {
+//                fs::write(path, key_url_json).or(Err(String::from("Error: can not write into file")))
+//            },
+//            Err(err)  =>  Err(String::from("Error: can not save the ShortLink"))
+//        }
+//     }
+// }
+// 
+
 
 impl ShortStore{
 
@@ -64,6 +118,7 @@ impl ShortStore{
         }
     }
 
+    ///ShortStore insert into HashMap (InMemory)
     fn insert(&mut self, link: ShortLink)->Result<(),String>{
 
         if self.links.contains_key(&link.key) {
@@ -75,53 +130,211 @@ impl ShortStore{
         Ok(())
     }
 
+    ///ShortStore generate an Alphanumeric key
     fn generate_key() -> String {
-        Alphanumeric.sample_string(&mut rand::rng(), 8)
+        Alphanumeric.sample_string(&mut rand::rng(), NB_KEY_CHARACTERS)
     }
 
+    ///ShortStore shorten an url
+    /// Return the shorten url as a key
     fn shorten(&mut self, url: String) -> Result<String, String> {
         self.shorten_with_generator(url, Self::generate_key)
     }
 
+    ///ShortStore shorten logic 
     fn shorten_with_generator(&mut self, url: String, mut generate: impl FnMut() -> String)->Result<String,String>{
 
         for _ in 0..10 {
             
             let key_generated = generate();
             
-            if !self.links.contains_key(&key_generated){
+            if !key_generated.contains("http://") && !key_generated.contains("https://"){
                 
-                let link = ShortLink::new(
-                    key_generated.clone(),
-                    url
-                )?;
+                let mut key_http = "http://".to_string();
+                key_http.push_str(&key_generated);
                 
-                self.insert(link)?;
+                let mut key_https = "https://".to_string();
+                key_https.push_str(&key_generated);
+
+                if !self.links.contains_key(&key_http) && !self.links.contains_key(&key_https){
+                    println!("key: {}",key_https);
+                    let link = ShortLink::new(
+                        key_generated.clone(),
+                        url
+                    )?;
+                    let key = link.key.clone();
+                    println!("ShortLink key: {}",link.key);
+                    println!("ShortLink url: {}", link.url);
+                    self.insert(link)?;
+                    
+                    return Ok(key);
+                }
                 
-                return Ok(key_generated);
             }
         }
         Err(String::from("Error: no free key found"))
     }
 
-
-
+    ///ShortStore find the url with the given key
     fn resolve(&self, key: &str)->Option<&str>{
         self.links.get(key).map(String::as_str)
+    }
+
+    ///ShortStore save link into a file
+    fn save(&self, path: &str) -> Result<(),String>{
+        self.save_with_writer(path, Self::writer)
+        
+    }
+
+    //Writer for save function
+    fn writer(path:&str, contents:&str) -> Result<(), String> {
+      fs::write(path, contents).or(Err("can not write store into file".to_string()))
+    }
+
+    ///Save store logic
+    ///save the store into a file.
+    fn save_with_writer(&self, path:&str, writer: impl Fn(&str,&str) -> Result<(),String>) -> Result<(),String> {
+
+        serde_json::to_string_pretty(self).map_or_else(
+            |err| {
+                Err(err.to_string())
+            },
+            |content| {
+                writer(path,&content)
+            }
+        )
+    }
+
+    fn deserializer(content: &str)->Self{
+        let store:Self = match serde_json::from_str(content){
+            Ok(c) => c,
+            Err(_) => ShortStore{
+                links: HashMap::new(),
+            }
+        };
+        store
+    }
+
+    fn load_with_deserializer(&self, path:&str, deserializer: impl Fn(&str)->ShortStore) -> Result<Self,String>{
+
+        let f = fs::read_to_string(path).map_or_else(
+            |err|{
+                Err(err.to_string())
+            },
+           |r|{
+               Ok(deserializer(&r))
+           });
+        f
+    }
+
+    /// ShortStore load from json store file: \
+    /// Ok --> ShortStore \
+    /// Err --> File's error \
+    /// if error from desrialization --> ShortStore empty
+    fn load(&self, path: &str) -> Result<Self, String> {
+
+        self.load_with_deserializer(path, Self::deserializer)
+
+//         let f = fs::read_to_string(path).map_or_else(
+//             |err| {
+//                 Err(err.to_string())
+//             }, |r| {
+//                let res:ShortStore = match serde_json::from_str(&r){
+//                     Ok(resolve) => resolve,
+//                     Err(_) => {
+//                         // let mut error = "invalid desrialization: ".to_string();
+//                         // error.push_str(&err.to_string());
+//                         ShortStore { links: HashMap::new() }
+//                     },
+//                 };
+// 
+//                Ok(res)
+//                
+//             });
+//         f
     }
 }
 
 fn main() {
     
+    let pathbuf = PathBuf::from("shorty-links.json");
+    println!("{}",pathbuf.display());
+
+    let store = ShortStore::new();
+    // store.shorten("https://discord.com".to_string()).expect("can not shorten the url");
+    // store.shorten("https://youtube.com".to_string()).expect("can not shorten the url");
+    let path = pathbuf.as_path().to_str().expect("path not found");
+    // store.save(path).expect("can not save the store");
+    let links_resolved = store.load(path).expect("Error: can not load the file");
+    
+    println!("{:?}",links_resolved)
     
 }
 
 ///ShortStore's unit tests
 #[cfg(test)]
 mod tests_short_store {
-    use crate::ShortLink;
+    use std::path::PathBuf;
+    use crate::{NB_KEY_CHARACTERS, ShortLink};
     use super::ShortStore;
 
+    /*
+     * load Tests
+     */
+    
+    #[test]
+    fn verify_links_loaded_into_store(){
+
+        let pathbuf = PathBuf::from("shorty-links.json");
+        println!("{}",pathbuf.display());
+    
+        let mut store = ShortStore::new();
+        store.shorten("https://discord.com".to_string()).expect("can not shorten the url");
+        store.shorten("https://youtube.com".to_string()).expect("can not shorten the url");
+        let path = pathbuf.as_path().to_str().expect("path not found");
+        store.save(path).expect("can not save the store");
+        let links_resolved = store.load(path).expect("Error: can not load the file");
+
+        assert!(store.load(path).is_ok());
+        assert_eq!(links_resolved.links.len(),2)
+    }
+
+    #[test]
+    fn verify_links_loaded() {
+
+        let pathbuf = PathBuf::from("shorty-links.json");
+        println!("{}",pathbuf.display());
+    
+        let mut store = ShortStore::new();
+        store.shorten("https://discord.com".to_string()).expect("can not shorten the url");
+        store.shorten("https://youtube.com".to_string()).expect("can not shorten the url");
+        let path = pathbuf.as_path().to_str().expect("path not found");
+        store.save(path).expect("can not save the store");
+        // let links_resolved = store.load(path).expect("Error: can not load the file");
+
+        assert!(store.load(path).is_ok())
+    }
+
+    /*
+     * save Tests
+     */
+    
+    #[test]
+    fn verify_links_serialized(){
+
+        let mut store = ShortStore::new();
+
+        let shorten = store.shorten("https://discord.com".to_string()).expect("Error: invalid url or no free key");
+
+        let writer = |p:&str,c:&str|{
+                Ok(())
+            };
+
+         assert_eq!(store.links.len(),1);
+         assert!(store.save_with_writer("store.json",writer).is_ok())
+        
+    }
+    
     /*
      * Shorten Tests
      */
@@ -139,6 +352,9 @@ mod tests_short_store {
             "Taken001".to_string(),
             "https://twitch.com".to_string()).expect("Error: can not create new link");
 
+        println!("ShortLink key: {}", shorty.get_key());
+        println!("ShortLink url: {}", shorty.get_url());
+
         short_store.insert(shorty).expect("Error: can not insert a new link");
 
         let mut calls = 0;
@@ -149,9 +365,9 @@ mod tests_short_store {
 
         let result = short_store.shorten_with_generator("https://go.com".to_string(), generate);
 
-        assert!(result.is_err());
         assert_eq!(calls,10);
-        assert_eq!(short_store.resolve("Taken001"), Some("https://twitch.com/"));
+        assert!(result.is_err());
+        assert_eq!(short_store.resolve("https://Taken001"), Some("https://twitch.com/"));
         assert_eq!(short_store.links.len(),1)
         
     }
@@ -183,12 +399,12 @@ mod tests_short_store {
             "https://exemple.com".to_string(), generate)
         .expect("Error: new try must found a free key");
 
-         assert_eq!(result,"Free0001");
          assert_eq!(calls,2);
+         assert_eq!(result,"https://Free0001");
          assert_eq!(short_store.links.len(),2);
-         assert_eq!(short_store.resolve("Free0001"),Some("https://exemple.com/"));
+         assert_eq!(short_store.resolve("https://Free0001"),Some("https://exemple.com/"));
          assert_eq!(
-             short_store.resolve("Taken001"),
+             short_store.resolve("https://Taken001"),
              Some("https://twitch.com/")
          )
         
@@ -198,7 +414,7 @@ mod tests_short_store {
     fn rejects_same_generate_key(){
         let mut short_store = ShortStore::new();
 
-        let _ = short_store.shorten_with_generator(
+        let _r = short_store.shorten_with_generator(
             "https://exemple.com".to_string(), 
             always_taken
         ).expect("Error: can not generate a new key");
@@ -209,7 +425,7 @@ mod tests_short_store {
 
        assert!(res.is_err());
        assert_eq!(
-           short_store.resolve("Taken001"),
+           short_store.resolve("https://Taken001"),
            Some("https://exemple.com/")
        );
        assert_eq!(short_store.links.len(),1)
@@ -247,7 +463,7 @@ mod tests_short_store {
     fn verify_generate_key_is_alphanumeric(){
         let key = ShortStore::generate_key();
         
-        assert_eq!(key.len(), 8);
+        assert_eq!(key.len(), NB_KEY_CHARACTERS);
         assert!(key.chars().all(|character| character.is_ascii_alphanumeric()));
     }
     
@@ -266,7 +482,7 @@ mod tests_short_store {
         assert!(inserted.is_ok());
 
         assert_eq!(
-            shorty_store.links.get("abc123").map(String::as_str),
+            shorty_store.links.get("https://abc123").map(String::as_str),
             Some("https://youtube.com/")
         )
         
@@ -291,7 +507,7 @@ mod tests_short_store {
         assert!(inserted.is_err());
 
         assert_eq!(
-            shorty_store.links.get("abc123")
+            shorty_store.links.get("https://abc123")
                 .map(String::as_str),
             Some("https://discord.com/")
         )
@@ -325,7 +541,7 @@ mod tests_short_store {
             .expect("invalid insert");
 
         assert_eq!(
-            shorty_store.resolve("ghi789"),
+            shorty_store.resolve("https://ghi789"),
             Some("https://twitch.com/")
         );
 
@@ -405,7 +621,7 @@ mod tests {
 
         let shorty = result.expect("a valid key or url must be accepted");
         
-        assert_eq!(shorty.get_key(),"abc123");
+        assert_eq!(shorty.get_key(),"http://abc123");
         assert_eq!(shorty.get_url(), "http://exemple.com/")
     }
 
@@ -420,6 +636,16 @@ mod tests {
         let shorty = result.expect("a valid key or url must be accepted");
 
         assert_eq!(shorty.get_url(), "https://exemple.com/")
+    }
+
+    #[test]
+    fn rejects_url_scheme_key_entry(){
+
+        let r = ShortLink::new(
+            "https://abc123".to_string(),
+            "http://exemple.com".to_string());
+
+        assert!(r.is_err())
     }
 
     #[test]
