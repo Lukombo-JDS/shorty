@@ -234,24 +234,6 @@ impl ShortStore{
     fn load(&self, path: &str) -> Result<Self, String> {
 
         self.load_with_deserializer(path, Self::deserializer)
-
-//         let f = fs::read_to_string(path).map_or_else(
-//             |err| {
-//                 Err(err.to_string())
-//             }, |r| {
-//                let res:ShortStore = match serde_json::from_str(&r){
-//                     Ok(resolve) => resolve,
-//                     Err(_) => {
-//                         // let mut error = "invalid desrialization: ".to_string();
-//                         // error.push_str(&err.to_string());
-//                         ShortStore { links: HashMap::new() }
-//                     },
-//                 };
-// 
-//                Ok(res)
-//                
-//             });
-//         f
     }
 }
 
@@ -300,11 +282,11 @@ mod tests_short_store {
         println!("{}",pathbuf.display());
     
         let mut store = ShortStore::new();
-        store.shorten("https://discord.com".to_string()).expect("can not shorten the url");
-        store.shorten("https://youtube.com".to_string()).expect("can not shorten the url");
+        store.shorten("https://discord.com".to_string()).expect("expected shorten the url: ");
+        store.shorten("https://youtube.com".to_string()).expect("expected shorten the url: ");
         let path = pathbuf.as_path().to_str().expect("path not found");
         store.save(path).expect("can not save the store");
-        let links_resolved = store.load(path).expect("Error: can not load the file");
+        let links_resolved = store.load(path).expect("expected load the file: ");
 
         assert!(store.load(path).is_ok());
         assert_eq!(links_resolved.links.len(),2)
