@@ -278,9 +278,20 @@ mod tests_short_store {
     use crate::{NB_KEY_CHARACTERS, ShortLink};
     use super::ShortStore;
 
+    const DATA:&str = r#"
+            {
+                links: {
+                    "abc123":"https://exemple.com,
+                    "def456":"http://exemple_2.com"
+                }
+            }
+        "#;
+
     /*
      * load Tests
      */
+
+
     
     #[test]
     fn verify_links_loaded_into_store(){
@@ -318,13 +329,29 @@ mod tests_short_store {
     /*
      * save Tests
      */
+
+    #[test]
+    fn verify_store_consistency(){
+        let mut store = ShortStore::new();
+        
+        let url_key = store.shorten("http://localhost".to_string())
+            .expect("valid url: ");
+
+        let writer = |p:&str, c:&str|{
+                Ok(())
+        };
+        
+        assert!(store.save_with_writer("store.json",writer).is_ok());
+        assert_eq!(store.resolve(&url_key),Some("http://localhost/"))
+        
+    }
     
     #[test]
     fn verify_links_serialized(){
 
         let mut store = ShortStore::new();
 
-        let shorten = store.shorten("https://discord.com".to_string()).expect("Error: invalid url or no free key");
+        let _shorten = store.shorten("https://discord.com".to_string()).expect("Error: invalid url or no free key");
 
         let writer = |p:&str,c:&str|{
                 Ok(())
