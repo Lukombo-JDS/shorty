@@ -1,12 +1,13 @@
 #![allow(dead_code, unused_variables, unused_imports)]
 
-use std::{collections::HashMap, fs::{self, File}, io::{BufRead, BufReader, Read}, path::PathBuf};
+use std::{collections::HashMap, fs::{self, File}, io::{BufRead, BufReader, Error, Read}, path::PathBuf};
 use rand::distr::{Alphanumeric, SampleString};
 use url::Url;
 use std::fmt::Display;
 use serde::{Deserialize, Serialize, Serializer};
 
 const NB_KEY_CHARACTERS: usize = 12;
+const PATH:&str = "store.json";
 
 /// Object saving user url and its key.
 #[derive(Serialize,Deserialize)]
@@ -79,40 +80,12 @@ struct ShortStore{
     links: HashMap<String, String>
 }
 
-// #[derive(Serialize)]
-// struct InMemory{
-//     store: ShortStore,
-//     link: ShortLink
-//     
-// }
-// 
-// impl InMemory{
-//     fn new(store: ShortStore, link: ShortLink)->InMemory{
-//         InMemory { 
-//             store: store,
-//             link: link
-//         }
-//     }
-// 
-//     fn save(&self, path: &str)->Result<(),String>{
-//         //serialize into json
-// 
-// 
-//        match serde_json::to_string_pretty(self) {
-//            Ok(key_url_json) => {
-//                fs::write(path, key_url_json).or(Err(String::from("Error: can not write into file")))
-//            },
-//            Err(err)  =>  Err(String::from("Error: can not save the ShortLink"))
-//        }
-//     }
-// }
-// 
-
 
 impl ShortStore{
 
     ///ShortStore Constructor for a new instance
     fn new()->ShortStore{
+        // fs::File::create_new(PATH).or(Err("create new json store error: ".to_string()));
         ShortStore {
             links: HashMap::new(),
         }
@@ -181,8 +154,8 @@ impl ShortStore{
     }
 
     ///ShortStore save link into a file
-    fn save(&self, path: &str) -> Result<(),String>{
-        self.save_with_writer(path, Self::writer)
+    fn save(&self) -> Result<(),String>{
+        self.save_with_writer(Self::writer)
         
     }
 
@@ -193,36 +166,36 @@ impl ShortStore{
 
     ///Save store logic
     ///save the store into a file.
-    fn save_with_writer(&self, path:&str, writer: impl Fn(&str,&str) -> Result<(),String>) -> Result<(),String> {
+    fn save_with_writer(&self, writer: impl Fn(&str,&str) -> Result<(),String>) -> Result<(),String> {
 
         serde_json::to_string_pretty(self).map_or_else(
             |err| {
                 Err(err.to_string())
             },
             |content| {
-                writer(path,&content)
+                writer(PATH,&content)
             }
         )
     }
 
-    fn deserializer(content: &str)->Self{
-        let store:Self = match serde_json::from_str(content){
-            Ok(c) => c,
-            Err(_) => ShortStore{
-                links: HashMap::new(),
-            }
-        };
-        store
+    fn reader(path:&str)->Result<String,String>{
+       fs::read_to_string(path).or(Err("can not read the file".to_string()))
     }
 
-    fn load_with_deserializer(&self, path:&str, deserializer: impl Fn(&str)->ShortStore) -> Result<Self,String>{
+    fn load_with_deserializer(&self, reader: impl FnOnce(&str)->Result<String,String>)->Result<Self, String>{
 
-        let f = fs::read_to_string(path).map_or_else(
+        let f = reader(PATH).map_or_else(
             |err|{
                 Err(err.to_string())
             },
            |r|{
-               Ok(deserializer(&r))
+               let store:Self = match serde_json::from_str(&r){
+                   Ok(c) => c,
+                   Err(_) => ShortStore{
+                       links: HashMap::new(),
+                   }
+               };
+               Ok(store)
            });
         f
     }
@@ -231,9 +204,9 @@ impl ShortStore{
     /// Ok --> ShortStore \
     /// Err --> File's error \
     /// if error from desrialization --> ShortStore empty
-    fn load(&self, path: &str) -> Result<Self, String> {
+    fn load(&self) -> Result<Self, String> {
 
-        self.load_with_deserializer(path, Self::deserializer)
+        self.load_with_deserializer(Self::reader)
     }
 }
 
@@ -247,7 +220,7 @@ fn main() {
     // store.shorten("https://youtube.com".to_string()).expect("can not shorten the url");
     let path = pathbuf.as_path().to_str().expect("path not found");
     // store.save(path).expect("can not save the store");
-    let links_resolved = store.load(path).expect("Error: can not load the file");
+    let links_resolved = store.load().expect("Error: can not load the file");
     
     println!("{:?}",links_resolved)
     
@@ -262,9 +235,9 @@ mod tests_short_store {
 
     const DATA:&str = r#"
             {
-                links: {
-                    "abc123":"https://exemple.com,
-                    "def456":"http://exemple_2.com"
+                "links": {
+                    "https://abc123":"https://exemple.com",
+                    "http://def456":"http://exemple_2.com"
                 }
             }
         "#;
@@ -273,39 +246,39 @@ mod tests_short_store {
      * load Tests
      */
 
-
-    
     #[test]
     fn verify_links_loaded_into_store(){
-
-        let pathbuf = PathBuf::from("shorty-links.json");
-        println!("{}",pathbuf.display());
     
-        let mut store = ShortStore::new();
-        store.shorten("https://discord.com".to_string()).expect("expected shorten the url: ");
-        store.shorten("https://youtube.com".to_string()).expect("expected shorten the url: ");
-        let path = pathbuf.as_path().to_str().expect("path not found");
-        store.save(path).expect("can not save the store");
-        let links_resolved = store.load(path).expect("expected load the file: ");
+        let store = ShortStore::new();
+        // store.shorten("https://discord.com".to_string()).expect("expected shorten the url: ");
+        // store.shorten("https://youtube.com".to_string()).expect("expected shorten the url: ");
+        // store.save().expect("can not save the store");
+        
 
-        assert!(store.load(path).is_ok());
+        let reader = |a:&str|{
+            Ok(DATA.to_string())
+        };
+        
+        let links_resolved = store.load_with_deserializer(reader).expect("invalid reader: ");
+        
+        assert!(store.load().is_ok());
         assert_eq!(links_resolved.links.len(),2)
     }
 
     #[test]
     fn verify_links_loaded() {
 
-        let pathbuf = PathBuf::from("shorty-links.json");
-        println!("{}",pathbuf.display());
-    
         let mut store = ShortStore::new();
         store.shorten("https://discord.com".to_string()).expect("can not shorten the url");
         store.shorten("https://youtube.com".to_string()).expect("can not shorten the url");
-        let path = pathbuf.as_path().to_str().expect("path not found");
-        store.save(path).expect("can not save the store");
+        let writer = |p:&str, c:&str| {
+            Ok(())
+        };
+        let _ = store.save_with_writer(writer);
+        
         // let links_resolved = store.load(path).expect("Error: can not load the file");
 
-        assert!(store.load(path).is_ok())
+        assert!(store.load().is_ok())
     }
 
     /*
@@ -323,7 +296,7 @@ mod tests_short_store {
                 Ok(())
         };
         
-        assert!(store.save_with_writer("store.json",writer).is_ok());
+        assert!(store.save_with_writer(writer).is_ok());
         assert_eq!(store.resolve(&url_key),Some("http://localhost/"))
         
     }
@@ -340,7 +313,7 @@ mod tests_short_store {
             };
 
          assert_eq!(store.links.len(),1);
-         assert!(store.save_with_writer("store.json",writer).is_ok())
+         assert!(store.save_with_writer(writer).is_ok())
         
     }
     
