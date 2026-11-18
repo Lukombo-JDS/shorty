@@ -1,6 +1,6 @@
 #![allow(dead_code, unused_variables, unused_imports)]
 
-use std::{collections::HashMap, fs::{self, File}, io::{BufRead, BufReader, Error, Read}, path::PathBuf};
+use std::{collections::HashMap, fs::{self, File}, io::{self, BufRead, BufReader, Error, Read, stdin}, path::PathBuf};
 use rand::distr::{Alphanumeric, SampleString};
 use url::Url;
 use std::fmt::Display;
@@ -15,7 +15,6 @@ struct ShortLink{
     url: String,
     key: String
 }
-
 impl ShortLink {
 
     /// ShortLink Constructor: creating ShortLink instance
@@ -79,8 +78,6 @@ impl ShortLink {
 struct ShortStore{
     links: HashMap<String, String>
 }
-
-
 impl ShortStore{
 
     ///ShortStore Constructor for a new instance
@@ -210,6 +207,64 @@ impl ShortStore{
     }
 }
 
+
+struct CliManager {
+    args: Vec<String>,
+    store: ShortStore,
+}
+
+impl CliManager {
+    fn constructor(user_inputs: Vec<String>) -> CliManager {
+        let link_store_initialize: ShortStore = ShortStore::new();
+
+        CliManager {
+            args: user_inputs,
+            store: link_store_initialize,
+        }
+    }
+    fn get_request(&self) -> Option<&str>{
+
+       Some(self.args.get(3).or(None)?.as_str())
+        
+    }
+    fn get_flags(&self) -> Option<&str> {
+        Some(self.args.get(2).or(None)?.as_str())
+    }
+
+    fn router(&mut self, flag: &str){
+
+        match flag {
+            "-c"|"--create" => {
+                let url = self.get_request().unwrap_or("");
+                let r = self.store.shorten(String::from(url));
+                let result = r.unwrap_or_else(|err| err);
+                println!("error: {}",result)
+
+            },
+            "-g"|"--get" => {
+                let r = self.store.resolve(self.get_request().unwrap_or(""));
+                let res = r.unwrap_or_else(|| {
+                    " \
+                    url key not found\
+                    Usage: \
+                    --> shorty -c|--create <url>\
+                    --> shorty -g|--get <url>\
+                    "
+                });
+                println!("{}",String::from(res))
+            },
+            _ => {
+                println!("{}",String::from("\
+                Usage:\
+                --> shorty -c|--create <url>\
+                --> shorty -g|--get <url key>\
+                "))
+            }
+        }
+    }
+
+}
+
 fn main() {
     
     let pathbuf = PathBuf::from("shorty-links.json");
@@ -224,6 +279,27 @@ fn main() {
     
     println!("{:?}",links_resolved)
     
+}
+
+///CLIManager's unit tests
+#[cfg(test)]
+mod tests_cli_manager {
+    use std::collections::HashMap;
+    use crate::{CliManager};
+    use super::ShortStore;
+
+    #[test]
+    fn verify_constructor_initialized(){
+        let binary = String::from("shorty");
+        let flag = String::from("-c");
+        let request = String::from("https://gta.com");
+        let inputs:Vec<String> = vec![binary,flag,request];
+        let cli = CliManager::constructor(inputs);
+
+        assert_eq!(cli.args.len(),3);
+        assert_eq!(cli.store.links,HashMap::new())
+
+    }
 }
 
 ///ShortStore's unit tests
@@ -250,10 +326,6 @@ mod tests_short_store {
     fn verify_links_loaded_into_store(){
     
         let store = ShortStore::new();
-        // store.shorten("https://discord.com".to_string()).expect("expected shorten the url: ");
-        // store.shorten("https://youtube.com".to_string()).expect("expected shorten the url: ");
-        // store.save().expect("can not save the store");
-        
 
         let reader = |a:&str|{
             Ok(DATA.to_string())
@@ -355,7 +427,7 @@ mod tests_short_store {
     }
 
     #[test]
-    fn retries_after_collision () {
+    fn retries_after_collision(){
 
         let mut short_store = ShortStore::new();
 
