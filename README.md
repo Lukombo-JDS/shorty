@@ -5,7 +5,7 @@ Easy to use into the terminal:
 - enter the url -> get a short masked version of it.
 - enter the short masked url -> get the source url
 
-## Onjectives
+## Objectives
 
 Learned the basic of Rust through a small CLI project:
 
